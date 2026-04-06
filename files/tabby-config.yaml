@@ -1,0 +1,4 @@
+appearance:
+  css: |-
+    split-tab-spanner {border: dotted yellow; }
+    split-tab-spanner.active {border: dashed red; }

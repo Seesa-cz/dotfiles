@@ -148,6 +148,20 @@
           | map(attribute='browser_download_url') \
           | first }}"
 
+    - name: Vytvoř adresář ~/.config/tabby
+      file:
+        path: "{{ home }}/.config/tabby"
+        state: directory
+        mode: '0755'
+      become: no
+
+    - name: Tabby config (vytvoří pouze pokud neexistuje)
+      copy:
+        src: files/tabby-config.yaml
+        dest: "{{ home }}/.config/tabby/config.yaml"
+        force: no
+      become: no
+
     # ── (5) Nastavení ─────────────────────────────────────────
     - name: Nastav Firefox jako výchozí prohlížeč
       command: xdg-settings set default-web-browser firefox_firefox.desktop
