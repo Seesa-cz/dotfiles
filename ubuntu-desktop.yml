@@ -17,35 +17,13 @@
         state: directory
         mode: '0755'
 
-    - name: Odstraň zastaralý vscode.list (pokud existuje z dřívější instalace)
-      file:
-        path: /etc/apt/sources.list.d/vscode.list
-        state: absent
-
-    - name: VS Code GPG klíč
-      shell: |
-        curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > /usr/share/keyrings/microsoft.gpg
-      args:
-        creates: /usr/share/keyrings/microsoft.gpg
-
-    - name: VS Code apt repozitář (deb822)
-      copy:
-        dest: /etc/apt/sources.list.d/vscode.sources
-        content: |
-          Types: deb
-          URIs: https://packages.microsoft.com/repos/code
-          Suites: stable
-          Components: main
-          Architectures: amd64,arm64,armhf
-          Signed-By: /usr/share/keyrings/microsoft.gpg
-
     - name: MS Edge GPG klíč
       shell: |
         curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > /etc/apt/trusted.gpg.d/microsoft-edge.gpg
       args:
         creates: /etc/apt/trusted.gpg.d/microsoft-edge.gpg
 
-    - name: MS Edge apt repozitář
+    - name: MS Edge APT repozitář
       apt_repository:
         repo: "deb [arch=amd64 signed-by=/etc/apt/trusted.gpg.d/microsoft-edge.gpg] https://packages.microsoft.com/repos/edge stable main"
         filename: microsoft-edge
@@ -56,7 +34,7 @@
       args:
         creates: /etc/apt/trusted.gpg.d/insynchq.gpg
 
-    - name: Insync apt repozitář
+    - name: Insync APT repozitář
       apt_repository:
         repo: "deb [signed-by=/etc/apt/trusted.gpg.d/insynchq.gpg] http://apt.insync.io/ubuntu {{ ansible_distribution_release }} non-free contrib"
         filename: insync
@@ -67,40 +45,40 @@
       args:
         creates: /etc/apt/keyrings/nodesource.gpg
 
-    - name: NodeSource apt repozitář (Node 22)
+    - name: NodeSource APT repozitář (Node 22)
       apt_repository:
         repo: "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main"
         filename: nodesource
 
     # ── (2) APT ───────────────────────────────────────────────
-    - name: (2.1) Apt update
+    - name: Apt update
       apt:
         update_cache: yes
 
-    - name: (2.2) Apt remove — LibreOffice
+    - name: Apt remove unwanted
       apt:
         name: libreoffice*
         state: absent
         purge: yes
 
-    - name: (2.2) Apt remove — zjisti nepotřebné jazykové balíčky
+    - name: Apt remove - prepare unnecessary language
       shell: |
         dpkg --get-selections | awk '{print $1}' | grep -E '^(language-pack|language-pack-gnome|firefox-locale|libreoffice-l10n)' | grep -vE '-(cs|en)(-base)?$'
       register: unwanted_lang_packages
       changed_when: false
 
-    - name: (2.2) Apt remove — nepotřebné jazykové balíčky
+    - name: Apt remove - unnecessary language
       apt:
         name: "{{ unwanted_lang_packages.stdout_lines }}"
         state: absent
         purge: yes
       when: unwanted_lang_packages.stdout_lines | length > 0
 
-    - name: (2.3) Apt upgrade
+    - name: Apt upgrade
       apt:
         upgrade: dist
 
-    - name: (2.4) Apt install
+    - name: Apt install
       apt:
         name:
           - mc
@@ -114,7 +92,6 @@
           - language-pack-cs
           - language-pack-en
           - nodejs
-          - code
           - microsoft-edge-stable
           - insync
           - insync-nautilus
@@ -137,12 +114,13 @@
         state: present
 
     # ── (3) Snap ──────────────────────────────────────────────
-    - name: (3) Snap install
+    - name: Snap install
       snap:
         name: "{{ item.name }}"
         classic: "{{ item.classic | default(false) }}"
       loop:
         - { name: nvim, classic: true }
+        - { name: code, classic: true }
         - { name: btop }
         - { name: firefox }
         - { name: remmina }
@@ -150,19 +128,19 @@
         - { name: onlyoffice-desktopeditors }
 
     # ── (4) Instalace .deb a ostatní ─────────────────────────
-    - name: (4.1) Instalace Claude Code
+    - name: Claude Code
       npm:
         name: "@anthropic-ai/claude-code"
         global: yes
 
-    - name: (4.2) Zjisti nejnovější verzi Tabby
+    - name: TabbyTerm prepare
       uri:
         url: https://api.github.com/repos/Eugeny/tabby/releases/latest
         return_content: yes
       register: tabby_release
       become: no
 
-    - name: (4.2) Instalace Tabby .deb
+    - name: Instalace TabbyTerm .deb
       apt:
         deb: "{{ tabby_release.json.assets \
           | selectattr('name', 'match', '.*linux-x64\\.deb') \
@@ -170,7 +148,7 @@
           | first }}"
 
     # ── (5) Nastavení ─────────────────────────────────────────
-    - name: (5) Nastav Firefox jako výchozí prohlížeč
+    - name: Nastav Firefox jako výchozí prohlížeč
       command: xdg-settings set default-web-browser firefox_firefox.desktop
       become: no
       when: ansible_env.DISPLAY is defined or ansible_env.WAYLAND_DISPLAY is defined
