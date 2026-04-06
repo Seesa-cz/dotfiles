@@ -16,17 +16,17 @@
         path: /etc/apt/keyrings
         state: directory
         mode: '0755'
-
-    - name: MS Edge GPG klíč
-      shell: |
-        curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > /etc/apt/trusted.gpg.d/microsoft-edge.gpg
-      args:
-        creates: /etc/apt/trusted.gpg.d/microsoft-edge.gpg
-
-    - name: MS Edge APT repozitář
-      apt_repository:
-        repo: "deb [arch=amd64 signed-by=/etc/apt/trusted.gpg.d/microsoft-edge.gpg] https://packages.microsoft.com/repos/edge stable main"
-        filename: microsoft-edge
+#
+#    - name: MS Edge GPG klíč
+#      shell: |
+#        curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > /etc/apt/trusted.gpg.d/microsoft-edge.gpg
+#      args:
+#        creates: /etc/apt/trusted.gpg.d/microsoft-edge.gpg
+#
+#    - name: MS Edge APT repozitář
+#      apt_repository:
+#        repo: "deb [arch=amd64 signed-by=/etc/apt/trusted.gpg.d/microsoft-edge.gpg] https://packages.microsoft.com/repos/edge stable main"
+#        filename: microsoft-edge
 
     - name: Insync GPG klíč
       shell: |
@@ -95,6 +95,7 @@
           - microsoft-edge-stable
           - insync
           - insync-nautilus
+          - bzip2
         state: present
 
     - name: Povolení a spuštění SSH
