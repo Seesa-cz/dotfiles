@@ -1,0 +1,193 @@
+---
+- name: Workstation setup
+  hosts: localhost
+  connection: local
+  become: yes
+
+  vars:
+    home: "{{ ansible_env.HOME }}"
+    user: "{{ ansible_env.USER }}"
+
+  tasks:
+
+    # ── (1) Repositories a GPG klíče ─────────────────────────
+    - name: Vytvoř adresář /etc/apt/keyrings
+      file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: '0755'
+
+    - name: Odstraň zastaralý vscode.list (pokud existuje z dřívější instalace)
+      file:
+        path: /etc/apt/sources.list.d/vscode.list
+        state: absent
+
+    - name: VS Code GPG klíč
+      shell: |
+        curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > /usr/share/keyrings/microsoft.gpg
+      args:
+        creates: /usr/share/keyrings/microsoft.gpg
+
+    - name: VS Code apt repozitář (deb822)
+      copy:
+        dest: /etc/apt/sources.list.d/vscode.sources
+        content: |
+          Types: deb
+          URIs: https://packages.microsoft.com/repos/code
+          Suites: stable
+          Components: main
+          Architectures: amd64,arm64,armhf
+          Signed-By: /usr/share/keyrings/microsoft.gpg
+
+    - name: MS Edge GPG klíč
+      shell: |
+        curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > /etc/apt/trusted.gpg.d/microsoft-edge.gpg
+      args:
+        creates: /etc/apt/trusted.gpg.d/microsoft-edge.gpg
+
+    - name: MS Edge apt repozitář
+      apt_repository:
+        repo: "deb [arch=amd64 signed-by=/etc/apt/trusted.gpg.d/microsoft-edge.gpg] https://packages.microsoft.com/repos/edge stable main"
+        filename: microsoft-edge
+
+    - name: Insync GPG klíč
+      shell: |
+        curl -fsSL https://apt.insync.io/insynchq.gpg | gpg --dearmor | tee /etc/apt/trusted.gpg.d/insynchq.gpg > /dev/null
+      args:
+        creates: /etc/apt/trusted.gpg.d/insynchq.gpg
+
+    - name: Insync apt repozitář
+      apt_repository:
+        repo: "deb [signed-by=/etc/apt/trusted.gpg.d/insynchq.gpg] http://apt.insync.io/ubuntu {{ ansible_distribution_release }} non-free contrib"
+        filename: insync
+
+    - name: NodeSource GPG klíč
+      shell: |
+        curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
+      args:
+        creates: /etc/apt/keyrings/nodesource.gpg
+
+    - name: NodeSource apt repozitář (Node 22)
+      apt_repository:
+        repo: "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main"
+        filename: nodesource
+
+    # ── (2) APT ───────────────────────────────────────────────
+    - name: (2.1) Apt update
+      apt:
+        update_cache: yes
+
+    - name: (2.2) Apt remove — LibreOffice
+      apt:
+        name: libreoffice*
+        state: absent
+        purge: yes
+
+    - name: (2.2) Apt remove — zjisti nepotřebné jazykové balíčky
+      shell: |
+        dpkg --get-selections | awk '{print $1}' | grep -E '^(language-pack|language-pack-gnome|firefox-locale|libreoffice-l10n)' | grep -vE '-(cs|en)(-base)?$'
+      register: unwanted_lang_packages
+      changed_when: false
+
+    - name: (2.2) Apt remove — nepotřebné jazykové balíčky
+      apt:
+        name: "{{ unwanted_lang_packages.stdout_lines }}"
+        state: absent
+        purge: yes
+      when: unwanted_lang_packages.stdout_lines | length > 0
+
+    - name: (2.3) Apt upgrade
+      apt:
+        upgrade: dist
+
+    - name: (2.4) Apt install
+      apt:
+        name:
+          - mc
+          - keepassxc
+          - curl
+          - git
+          - gpg
+          - build-essential
+          - default-jre
+          - openssh-server
+          - language-pack-cs
+          - language-pack-en
+          - nodejs
+          - code
+          - microsoft-edge-stable
+          - insync
+          - insync-nautilus
+        state: present
+
+    - name: Povolení a spuštění SSH
+      systemd:
+        name: ssh
+        enabled: yes
+        state: started
+
+    - name: Generování locale cs_CZ.UTF-8
+      locale_gen:
+        name: cs_CZ.UTF-8
+        state: present
+
+    - name: Generování locale en_US.UTF-8
+      locale_gen:
+        name: en_US.UTF-8
+        state: present
+
+    # ── (3) Snap ──────────────────────────────────────────────
+    - name: (3) Snap install
+      snap:
+        name: "{{ item.name }}"
+        classic: "{{ item.classic | default(false) }}"
+      loop:
+        - { name: nvim, classic: true }
+        - { name: btop }
+        - { name: firefox }
+        - { name: remmina }
+        - { name: telegram-desktop }
+        - { name: onlyoffice-desktopeditors }
+
+    # ── (4) Instalace .deb a ostatní ─────────────────────────
+    - name: (4.1) Instalace Claude Code
+      npm:
+        name: "@anthropic-ai/claude-code"
+        global: yes
+
+    - name: (4.2) Zjisti nejnovější verzi Tabby
+      uri:
+        url: https://api.github.com/repos/Eugeny/tabby/releases/latest
+        return_content: yes
+      register: tabby_release
+      become: no
+
+    - name: (4.2) Instalace Tabby .deb
+      apt:
+        deb: "{{ tabby_release.json.assets \
+          | selectattr('name', 'match', '.*linux-x64\\.deb') \
+          | map(attribute='browser_download_url') \
+          | first }}"
+
+    # ── (5) Nastavení ─────────────────────────────────────────
+    - name: (5) Nastav Firefox jako výchozí prohlížeč
+      command: xdg-settings set default-web-browser firefox_firefox.desktop
+      become: no
+      when: ansible_env.DISPLAY is defined or ansible_env.WAYLAND_DISPLAY is defined
+
+    - name: Vytvoř adresář pro dconf override
+      file:
+        path: /etc/dconf/db/local.d
+        state: directory
+        mode: '0755'
+
+    - name: dconf override — klávesnice (Czech QWERTY Extra backslash + EN)
+      copy:
+        dest: /etc/dconf/db/local.d/01-keyboard
+        content: |
+          [org/gnome/desktop/input-sources]
+          sources=[('xkb', 'cz+qwerty_bksl'), ('xkb', 'us')]
+          per-window=false
+
+    - name: Aplikuj dconf změny
+      command: dconf update
